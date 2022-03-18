@@ -1,0 +1,113 @@
+---
+title: "R Notebook"
+output: html_notebook
+Author: Ryan Yordanoff
+---
+Partial Replication of:
+https://pubmed.ncbi.nlm.nih.gov/25477501/] based on analyst role from: https://bf528.readthedocs.io/en/latest/content/projects/project_2_rnaseq_1/project_2_rnaseq_1.html
+
+```{r message=FALSE} 
+library('tidyverse')
+```
+
+
+```{r }
+#1 Load Expression Data
+gene_exp_data <- read_delim('/projectnb/bf528/users/frizzled/project_2/data/cuffdiff_out/gene_exp.diff') %>%
+  arrange(q_value)
+
+head(gene_exp_data)
+
+# gene_exp_data
+
+```
+
+```{r}
+#2 Plot Histogram of log2fold change for all genes
+
+log2fold_hist <- function(exp_data) {
+  p <- exp_data %>% 
+    ggplot(aes(x=`log2(fold_change)`)) +
+    geom_histogram(color='grey40',fill='lightsalmon1', bins = 20) +
+    theme_minimal() +
+    labs(title='Counts of log2(fold)change obtained from DE analysis (vP0 vs. vAd)')
+  
+  
+  return(p)
+}
+
+log2fold_hist(gene_exp_data)
+```
+
+```{r}
+#3 Significant Subset
+significant_subset <- gene_exp_data %>%
+  dplyr::filter(significant == 'yes')
+
+significant_subset
+```
+```{r}
+#4 Histogram of log2fold change for significant subset
+log2fold_hist(significant_subset)
+```
+```{r}
+#5 Up regulated and Down Regulated from significant subset
+
+up_regulated_significant <- significant_subset %>%
+  dplyr::filter(`log2(fold_change)` > 0)
+
+down_regulated_significant <- significant_subset %>%
+  dplyr::filter(`log2(fold_change)` < 0)
+
+up_regulated_significant
+down_regulated_significant
+```
+
+```{r}
+#6 Write up & down regulated to csv
+
+write(up_regulated_significant$gene, file = 'up_regulated_significant.csv')
+
+write(down_regulated_significant$gene, file = 'down_regulated_significant.csv')
+```
+
+```{r}
+# deliverable bullet point 3
+
+#A report of the number of differentially expressed genes detected at p<0.01, and the numbers of up- and down- regulated genes at this significance level
+
+p01_gene_exp_data <- gene_exp_data %>%
+  dplyr::filter(p_value < 0.01)
+
+# up-regulated at p<0.01
+p01_gene_exp_data_up <- p01_gene_exp_data %>%
+  dplyr::filter(`log2(fold_change)` > 0)
+
+# down-regulated at p<0.01
+p01_gene_exp_data_down <- p01_gene_exp_data %>%
+  dplyr::filter(`log2(fold_change)` < 0)
+
+print(str_glue('Number of genes detected at p < 0.01: {nrow(p01_gene_exp_data)}'))
+print(str_glue('Number of genes detected at p < 0.01 & up-regulated: {nrow(p01_gene_exp_data_up)}' ))
+print(str_glue('Number of genes detected at p < 0.01 & down-regulated: {nrow(p01_gene_exp_data_down)}' ))
+```
+```{r}
+#deliverable bullet 1
+
+top_10_diffexp <- head(gene_exp_data, 10) %>%
+  dplyr::select(gene, value_1, value_2, `log2(fold_change)`, p_value, q_value) %>%
+  dplyr::rename(Gene = gene, `P0 FPKM` = value_1, `Ad FPKM` = value_2, `Log2 Fold Change` = `log2(fold_change)`, `p-value` = p_value, `q-value` = q_value)
+
+top_10_diffexp
+```
+```{r}
+#pretty table of bullet 1
+library(formattable)
+
+formattable(top_10_diffexp)
+```
+
+```{r}
+
+```
+

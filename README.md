@@ -1,2 +1,2 @@
 # BU-Code
-Display of various work/projects while at Boston University
+Display of various work/projects in R and Python while at Boston University

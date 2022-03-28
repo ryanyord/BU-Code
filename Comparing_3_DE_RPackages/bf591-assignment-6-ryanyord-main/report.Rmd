@@ -1,0 +1,162 @@
+---
+title: "Assignment 6 Report"
+author: "Ryan Yordanoff"
+output: html_document
+---
+
+# Comparison of Three Differential Expression Packages
+We are interested in examining how three differential expression packages (DESeq2, edgeR, and Limma) operate within R. Complete the code blocks below and use this document as a reference to recreate the appropriate results. This report document should be completed after you fill in the functions in `main.R` and you satisfy the tests in `test_main.R` to the best of your ability. Once this document is completed, `Knit` it and push your repository to your student GitHub repository. 
+
+This assignment will involve a decent amount of documentation reading, but the relevant information is linked in the `main.R` function descriptions. 
+
+
+## Setup
+```{r Packages + setup, }
+source("main.R") # load all our wonderful functions
+knitr::opts_chunk$set(echo = FALSE) # no markdown for you <3
+```
+
+
+Load the data using `load_n_trim()` and store into a variable.
+```{r Load data}
+count_df <- load_n_trim("data/verse_counts.tsv")
+```
+
+## Run three packages
+In the following three sections, use your functions to complete the three differential expression analyses for DESeq2, edgeR, and Limma-voom.  
+
+### DESeq2
+We include the output of `run_deseq()` as well as the contents of the `coldata` input. The `colData` parameter for DESeq2 describes the experimental setup and which samples belong to which part of the experiment. We will be using the recommended count filter of 10 (from the DESeq2 documentation). A sample of the DESeq2 output is included, but note that the order of your genes and the values in the columns may differ slightly, please ensure the data is the right shape and has columns labeled correctly. A warning from DESeq2 is normal. Store DESeq2 results into a variable.
+
+
+
+
+```{r DESeq2}
+# create column data for deseq
+col_data <- data.frame(condition = c('day0','day0','adult','adult'), row.names = colnames(count_df))
+col_data$condition <- factor(col_data$condition)
+col_data
+
+
+deseq_res <- run_deseq(count_df,col_data,10,"condition_day0_vs_adult")
+deseq_res
+```
+
+### EdgeR
+EdgeR's method of describing an experiment is more simple than DESeq2. The default results for EdgeR **do not** include p-adjusted values, but we can add them ourselves. Once we have the results stored, we can add a new column by using the `stats::p.adjust()` function with `method = 'BH'`.
+```{r edgeR}
+run_edger <- function(count_dataframe, group) {
+  
+  y <- DGEList(counts = count_dataframe, group = factor(group))
+  
+  keep <- filterByExpr(y)
+  
+  y <- y[keep, , keep.lib.sizes=FALSE]
+  
+  y <- calcNormFactors(y)
+  
+  design_mat <- model.matrix(~ 0 + y$samples$group)
+  colnames(design_mat) <- levels(y$samples$group)
+  
+  d2 <- estimateDisp(y, design_mat, robust=TRUE)
+  
+  et <- exactTest(d2, pair=c(1,2))
+  
+
+  
+  return(et$table)
+}
+
+edger_res <- run_edger(count_df, c(1,1,2,2))
+
+edger_res$padj = stats::p.adjust(edger_res$PValue, method = 'BH')
+
+head(edger_res)
+
+```
+
+
+### Limma with voom
+Finally, we create an experimental design variable for Limma. We _will_ be using voom in this analysis, so set your voom argument to `TRUE`. If your limma/voom functions include a plot, that's fine! Bonus plots are always fun for cramming into your supplemental materials.
+```{r Limma}
+
+# create design and group parameters for limma
+limma_design <- data.frame(day0=1, day0vsadult=c(0, 0, 1, 1))
+
+row.names(limma_design) <- c("vP0_1", "vP0_2", "vAd_1", "vAd_2")
+
+limma_group <- factor(c(1,1,2,2))
+
+# run limma
+limma_res <- run_limma(count_df,limma_design,limma_group)
+head(limma_res)
+```
+
+
+## Plots
+We don't want to worry our little heads plotting _all_ of the data, so we will just trim it down to the 1,000 most significant p-values. Order each of the three results set by **p-value** and take the top (smallest) 1,000 rows. Note that we are _plotting_ the **p-adjusted** values but we are _sorting_ the **p-values**. This is an important distinction.
+```{r Trim data}
+#1000 each
+deseq_res <- deseq_res[order(deseq_res$pvalue),]
+deseq_res <- deseq_res[1:1000, ]
+
+
+edger_res <- edger_res[order(edger_res$PValue),]
+edger_res <- edger_res[1:1000, ]
+
+limma_res <- limma_res[order(limma_res$P.Value),]
+print('Limma shape before:')
+print(dim(limma_res))
+limma_res <- limma_res[1:1000, ]
+print('Limma shape after:')
+print(dim(limma_res))
+```
+
+We want to create a venn diagram using the `ggVennDiagram` package. This package asks for a list object as input, so we can create a list that contains the three named collections of genes from our separate packages. Calling row.names() will give us the names of all the genes.
+More info here: [ggVennDiagram](https://r-charts.com/part-whole/ggvenndiagram/)
+```{r Venn diagram, fig.align='center', fig.cap="Figure 1 - A venn diagram comparing the top 1,000 differentially expressed genes from three different R packages ordered by ascending p-value. A Lighter shade of blue indicates a higher proportion of shared genes."}
+
+x <- list(row.names(deseq_res),row.names(edger_res), row.names(limma_res))
+y <- list('EdgeR','Deseq', 'Limma')
+
+ggVennDiagram(x, category.names = y)
+
+```
+
+While plots can be used to create publication ready images, we can also utilize them to check our data and confirm our assumptions. Limma seems to have a number of selected genes that don't match DESeq2 and edgeR, so we're interested to see how the distributions of p-values compare to one another. We did not write this plot as a function, but can use the data we generate with `combine_pval()` to `facet_wrap()` the three data sets together. Use facet wrap with the `~ package` parameter to recreate the figure below. 
+```{r Facet plot, fig.align='center', fig.cap='Figure 2 - Three histogram plots comparing the distribution of p-values for three differential expression packages. Note that edgeR and DESeq2 have their values concentrated closer to 0 than the Limma package results.'}
+
+gathered <- combine_pval(deseq_res, edger_res, limma_res)
+
+p1 <- gathered %>%
+  ggplot() +
+  geom_histogram(mapping = aes(x=pval),color='grey40',fill='lightsalmon1') +
+  facet_wrap(~package, ncol=1) +
+  theme_minimal()
+  
+
+p1
+```
+
+Use `create_facets()` and `theme_plot()` to create the final plot.
+```{r Final plot, fig.align='center', fig.cap='Figure 3 - A volcano plot of the top 1,000 genes (ranked by p-value) comparing the log<sub>2</sub> fold-change with the adjusted p-value. Adjusted p-values above 1e-100 are highlighted in red.'}
+
+volcano <- create_facets(deseq_res, edger_res, limma_res)
+
+
+plot2 <- theme_plot(volcano)
+plot2
+```
+
+
+<h2 style="color:#69D1C5">**Bonus** Compare Limma Without Voom</h2>
+Completing the above cell is enough to finish the assignment, but there is one element of the documentation for Limma that you may be interested in looking at (entirely optionally, of course). `voom`, the component of Limma that we utilize, is not exactly _necessary_. The documentation even suggests:
+> If the sequencing depth is reasonably consistent across the RNA samples, then the simplest and most
+robust approach to differential exis to use limma-trend.  
+
+Is this appropriate for our data? How can you tell? If you're interested, design a function to run limma-trend _instead_ of voom, and compare using the plots above. What does using voom do to the data? Again, this is a bonus section and <span style="color:red">**is not**</span> necessary to complete assignment 6. Feel free to create the venn diagram, or other plots used in this assignment.  
+```{r Voomless bonus, fig.align='center', fig.cap="Figure 4+ - A venn diagram comparing the top 1,000 differentially expressed genes from four different R packages ordered by ascending p-value."}
+# voomless <- function(count_dataframe, design, group) {
+
+```
+
